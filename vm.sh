@@ -6,7 +6,7 @@ while true; do
                     --backtitle "Main Menu" \
                     --title "Navigation Menu" \
                     --menu "Choose an option:" \
-                    15 50 10 \
+                    16 60 10 \
                     "Documentation" "View documentation" \
                     "Create VM" "Create or select VM type" \
                     "Delete existing VM" "Select and delete VM" \
