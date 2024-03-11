@@ -18,10 +18,15 @@ while true; do
                     "Exit" "Exit the program" \
                     3>&1 1>&2 2>&3)
 
-    # Exit if "Exit" is chosen
+    # Confirmation for exit option
     if [[ $choice == "Exit" ]]; then
-        clear
-        exit
+        (dialog --title "Exiting" --yesno "Are you sure you want to exit?" 15 50)
+        response=$?
+        if [ $response -eq 0 ]; then
+            clear
+            echo "Exiting."
+            exit
+        fi
     fi
 
     # Handle each option
