@@ -1,0 +1,102 @@
+#!/bin/bash
+
+ACTIONS=("create" "delete" "start" "shutdown" "reboot" "condition" "connect")
+VMS=("default")
+
+usage() {
+	printf "Usage: cloudcommand OPTIONS...\n"
+	printf "Send commands to VM management server\n\n"
+	printf "Options:\n"
+	printf "  -a, --action      Action to take. Options are "create","delete","start","shutdown","reboot","condition".\n"
+	printf "  -u, --user      User name, also functions as the name of the vm. Should be a OUNetID.\n"
+	printf "  -i, --id           UID of user creating VM. \n"
+	printf "  -v, --vmtype         Type of VM to be created. Options are "default".\n"
+        printf "  -h, --help       Show help.\n"
+}
+
+die() {
+	>&2 echo "$@"
+	exit 1
+}
+
+die_with_usage() {
+        >&2 echo "$@"
+        >&2 echo
+        >&2 usage
+        exit 1
+}
+
+# Parse arguments and options
+args=()
+ACTION=""
+user=""
+id=""
+vmtype=""
+dryrun=""
+
+while [[ ${#@} -gt 0 ]]; do
+        case "$1" in
+                -a | --action)
+                        ACTION="$2"
+                        shift 2
+                        ;;
+                -u | --user)
+                        user="$2"
+                        shift 2
+                        ;;
+                -i | --id)
+                        id="$2"
+                        shift 2
+                        ;;
+                -v | --vmtype)
+                        vmtype="$2"
+                        shift 2
+                        ;;
+                -h | --help)
+			die_with_usage
+                        ;;                        
+                *)
+                        args+=("$1")
+                        shift
+                        ;;
+        esac
+done
+
+
+if ! [[ " ${ACTIONS[@]} " =~ " $ACTION " ]]; then
+    echo "Error: Action should match a string in the ACTIONS array. Options are <${ACTIONS[@]}>."
+    die
+fi
+
+# Check user: Should be alphanumeric, length 8 or less
+if ! [[ $user =~ ^[[:alnum:]]{1,8}$ ]]; then
+    echo "Error: User should be alphanumeric and have a length of 8 or less."
+    exit 1
+fi
+
+if [[ $ACTION == "create" ]]; then
+    # Check ID: Should be a number, greater than 10000
+    if (( $id <= 10000 )); then
+        echo "Error: ID should be a number greater than 10000."
+        exit 1
+    fi
+
+     # Check if array VMS contains a matching string
+     if ! [[ " ${VMS[@]} " =~ "$vmtype" ]]; then
+        echo "Error: vmtype should match a string in the VMS array. Options are <${VMS[@]}>"
+        exit 1
+     fi
+fi
+
+export TF_VAR_VM_UID=$id
+export TF_VAR_ounetid=$user
+export VM_TYPE=$vmtype
+export ACTION
+
+if [[ $ACTION == "connect" ]]; then
+	ssh -q -o ConnectTimeout=5 -o SendEnv="ACTION" $user@jump.cs.nor.ou.edu
+else
+	ssh -q -o SendEnv='TF_VAR_ounetid VM_TYPE TF_VAR_VM_UID ACTION ' -o ConnectTimeout=10 -i /etc/terraform_rsa terraform@swift.cs.nor.ou.edu &
+	disown -h
+	wait
+fi
