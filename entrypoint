@@ -1,0 +1,183 @@
+#!/bin/bash
+
+ouid=$(whoami)
+USER_ID=$(id -u)
+SCRIPT_PATH="$(dirname "$0")/cloudcommand"
+
+fetch_vm_status() {
+    VM_STATUS=$($SCRIPT_PATH -a "condition" -u $ouid -i $USER_ID 2>&1)
+    echo "$VM_STATUS"
+}
+
+# Main menu
+while true; do
+    VM_STATUS=$(fetch_vm_status)
+    trap "" SIGINT TSTP EXIT
+    HEADER="Last VM Status Check: $VM_STATUS"
+    
+    choice=$(dialog --clear \
+                    --backtitle "$HEADER" \
+                    --title "Navigation Menu" \
+                    --menu "Choose an option:" \
+                    16 60 10 \
+                    "Documentation" "View documentation" \
+                    "Create VM" "Create or select VM type" \
+                    "Delete existing VM" "Select and delete VM" \
+                    "Start VM" "Select and start VM" \
+                    "Shutdown VM" "Select and shutdown VM" \
+                    "Reboot VM" "Select and reboot VM" \
+                    "Connect to VM" "Select and connect to VM" \
+                    "Check VM status" "Select and check VM status" \
+                    "Exit" "Exit the program" \
+                    3>&1 1>&2 2>&3)
+
+    # Confirmation for exit option
+    if [[ $choice == "Exit" ]]; then
+        (dialog --title "Exiting" --yesno "Are you sure you want to exit?" 15 50)
+        response=$?
+        if [ $response -eq 0 ]; then
+            clear
+            echo "Exiting."
+            exit
+        fi
+    fi
+
+    # Handle each option
+    case $choice in
+        "Documentation")
+            # Placeholder for documentation view
+            dialog --msgbox "Viewing documentation..." 10 40
+            ;;
+        "Create VM")
+            # Submenu for creating VM
+            while true; do
+                create_choice=$(dialog --clear \
+                                       --backtitle "Create VM" \
+                                       --title "Create VM" \
+                                       --menu "Choose an option:" \
+                                       15 50 10 \
+                                       "Default" "Create Default VM" \
+                                       "Placeholder" "Create a Placeholder VM" \
+                                       "Back" "Return to main menu" \
+                                       3>&1 1>&2 2>&3)
+
+                case $create_choice in
+                    "Default")
+                        
+                        # Start the VM creation process in the background
+                        $SCRIPT_PATH -a "create" -u $ouid -i $USER_ID -v "default" > /tmp/vm_creation_output.txt 2>&1 &
+                        CLOUDCOMMAND_PID=$!
+
+                        # Start a loop to update the progress gauge
+                        TOTAL_TIME=120
+                        INTERVAL=2
+                        PERCENT=0
+
+                        (
+                        while [ $PERCENT -lt 100 ]; do
+                            # Check if the background process has ended
+                            if ! kill -0 $CLOUDCOMMAND_PID 2>/dev/null; then
+                                # If the process has ended, set PERCENT to 100 to end the loop
+                                PERCENT=100
+                            fi
+
+                            echo "XXX"
+                            echo "$PERCENT"
+                            echo "Creating VM... Please wait."
+                            echo "XXX"
+
+                            # Update the percent based on the interval, unless we've completed early
+                            if [ $PERCENT -ne 100 ]; then
+                                PERCENT=$((PERCENT + (INTERVAL * 100 / TOTAL_TIME)))
+                            fi
+                            
+                            sleep $INTERVAL
+                        done
+
+                        # Ensure the gauge shows 100% at completion
+                        echo "XXX"
+                        echo "100"
+                        echo "Creation complete."
+                        echo "XXX"
+                        sleep 1  # Allow the final message to be displayed briefly
+                        ) | dialog --title "Creating VM" --gauge "Please wait for the completion screen." 8 70 0
+
+                        # Wait for the VM creation process to actually complete
+                        wait $CLOUDCOMMAND_PID
+                        EXIT_STATUS=$?
+
+                        # Clean up the output file
+                        rm /tmp/vm_creation_output.txt
+
+                        # Display the result based on the exit status
+                        if [ $EXIT_STATUS -eq 0 ]; then
+                            dialog --title "Success" --msgbox "VM created successfully." 6 50
+                            break
+                        else
+                            dialog --title "Error" --msgbox "Failed to create VM." 6 50
+                            break
+                        fi
+                        ;;
+
+
+                    "Placeholder")
+                        $SCRIPT_PATH -a "create" -u $ouid -i $USER_ID -v "placeholder"
+                        dialog --msgbox "Creating Placeholder VM..." 10 40
+                        ;;
+                    "Back")
+                        break
+                        ;;
+                esac
+            done
+            ;;
+
+        "Delete existing VM")
+            dialog --title "Deleting VM" --infobox "Deleting VM... Please wait." 3 40 &
+            DIALOG_PID=$!
+            # Run the VM deletion command in the background
+            $SCRIPT_PATH -a "delete" -u $ouid -i $USER_ID > /tmp/vm_delete_output.txt 2>&1 &
+            DELETE_PID=$!
+            
+            # Wait for the delete command to finish
+            wait $DELETE_PID
+            EXIT_STATUS=$?
+
+            # After deletion, display the result based on the exit status
+            if [ $EXIT_STATUS -eq 0 ]; then
+                dialog --sleep 1 --msgbox "VM Deleted Successfully." 5 40
+            else
+                # ERROR_MSG=$(< /tmp/vm_delete_output.txt)
+                dialog --msgbox "Failed to delete VM." 5 40
+            fi
+
+            # Clean up the output file
+            rm /tmp/vm_delete_output.txt
+            ;;
+        "Start VM")
+            VM_START_STATUS=$($SCRIPT_PATH -a "start" -u $ouid -i $USER_ID 2>&1)
+            dialog --title "Start VM" --msgbox "$VM_START_STATUS" 10 40
+            ;;
+        "Shutdown VM")
+            VM_SHUTDOWN_STATUS=$($SCRIPT_PATH -a "shutdown" -u $ouid -i $USER_ID 2>&1)
+            dialog --title "Shutdown VM" --msgbox "$VM_SHUTDOWN_STATUS" 10 40
+            ;;
+        "Reboot VM")
+            VM_REBOOT_STATUS=$($SCRIPT_PATH -a "reboot" -u $ouid -i $USER_ID 2>&1)
+            dialog --title "Reboot VM" --msgbox "$VM_REBOOT_STATUS" 10 40
+            ;;
+        "Connect to VM")
+            dialog --title "Notice" --msgbox "You will be redirected and prompted to enter your SSH password. To exit the VM type 'exit'." 8 50
+            clear
+            $SCRIPT_PATH -a "connect" -u $ouid -i $USER_ID
+            dialog --msgbox "Finished connecting to VM." 10 40
+            ;;
+        "Check VM status")
+            # Capture the output of cloudcommand
+            VM_STATUS=$($SCRIPT_PATH -a "condition" -u $ouid -i $USER_ID 2>&1)
+            
+            # Display the output in a dialog box
+            dialog --title "VM Status" --msgbox "$VM_STATUS" 10 40
+            ;;
+    esac
+done
+
